@@ -1,0 +1,18 @@
+# Format Style Options - Created with Clang Power Tools
+---
+BasedOnStyle: WebKit
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeColon
+IndentCaseBlocks: false
+IndentCaseLabels: true
+IndentWidth: 4
+IndentWrappedFunctionNames: false
+NamespaceIndentation: All
+PenaltyReturnTypeOnItsOwnLine: 0
+
+ColumnLimit: 80
+ContinuationIndentWidth: 2
+DerivePointerAlignment: true
+SpaceInEmptyBlock: false
+
+...
