@@ -2883,7 +2883,7 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
 
 #define interface_def(name)                                                    \
     struct name;                                                               \
-    struct inf_##name {                                                     \
+    namespace ninf_##name{ struct inf_##name {                                                     \
         template <int N> struct TypeN {};                                      \
         template <> struct TypeN<__COUNTER__> {                                \
             using __T = pro::facade_builder;                                     \
@@ -2892,14 +2892,14 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
                                                                               
 
 #define interface_end(name)                                                    \
-    }; struct name                                                                \
-        : inf_##name::TypeN<__COUNTER__                                        \
+    }; } struct name                                                                \
+        : ninf_##name::inf_##name::TypeN<__COUNTER__                                        \
             - 2>::__T::build {  \
     };
 
 #define interface_def_generic(name, ...)                                                    \
     template<typename ...Args> struct name;                                                               \
-    template<__VA_ARGS__> struct inf_##name {                                                     \
+    namespace ninf_##name{ template<__VA_ARGS__> struct inf_##name {                                                     \
         template <int N> struct TypeN {};                                      \
         template <> struct TypeN<__COUNTER__> {                                \
             using __T = pro::facade_builder;                                     \
@@ -2908,8 +2908,8 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
                                                                               
 
 #define interface_end_generic(name)                                                    \
-    }; template<typename ...Args>struct name                                                                \
-        :  inf_##name<Args...>::template TypeN<__COUNTER__                                        \
+    }; } template<typename ...Args>struct name                                                                \
+        :  ninf_##name::inf_##name<Args...>::template TypeN<__COUNTER__                                        \
             - 2>::__T::build {  \
     };
 
