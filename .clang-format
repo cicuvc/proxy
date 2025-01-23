@@ -10,8 +10,8 @@ IndentWrappedFunctionNames: false
 NamespaceIndentation: All
 PenaltyReturnTypeOnItsOwnLine: 0
 
-ColumnLimit: 80
-ContinuationIndentWidth: 2
+ColumnLimit: 128
+ContinuationIndentWidth: 4
 DerivePointerAlignment: true
 SpaceInEmptyBlock: false
 

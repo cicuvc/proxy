@@ -1,43 +1,88 @@
-#include <iostream>
 #include "proxy.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
+#include <memory>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
-interface_def(Drawable){
+#include <unordered_map>
+
+interface_def(Drawable) {
     support_copy(pro::constraint_level::nontrivial);
-    fn_def(Area, double() const, double(double) const);
+    support_relocate(pro::constraint_level::nontrivial);
+    support_destroy(pro::constraint_level::nontrivial);
+    fn_def(Area, float() const, float(float) const);
     fn_def(Info, void() const);
-}interface_end(Drawable);
+}
+interface_end(Drawable);
 
-template<typename ... Args>
-std::string string_format( const std::string& format, Args ... args )
-{
-    int size_s = std::snprintf( nullptr, 0, format.c_str(), args ... ) + 1;
-    if( size_s <= 0 ){ throw std::runtime_error( "Error during formatting." ); }
-    auto size = static_cast<size_t>( size_s );
-    std::unique_ptr<char[]> buf( new char[ size ] );
-    std::snprintf( buf.get(), size, format.c_str(), args ... );
-    return std::string( buf.get(), buf.get() + size - 1 );
+interface_def(InfoOnly) {
+    support_copy(pro::constraint_level::nontrivial);
+    support_relocate(pro::constraint_level::nontrivial);
+    support_destroy(pro::constraint_level::nontrivial);
+    fn_def(Info, void() const);
+}
+interface_end(InfoOnly);
+
+template <typename... Args> std::string string_format(const std::string& format, Args... args) {
+    int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
+    if (size_s <= 0) {
+        throw std::runtime_error("Error during formatting.");
+    }
+    auto size = static_cast<size_t>(size_s);
+    std::unique_ptr<char[]> buf(new char[size]);
+    std::snprintf(buf.get(), size, format.c_str(), args...);
+    return std::string(buf.get(), buf.get() + size - 1);
 }
 
-struct Rectangle{
-    Rectangle(double width_, double height_): width(width_), height(height_){}
+struct Rectangle {
+    Rectangle(float width_, float height_) : width(width_), height(height_) {}
+    Rectangle(const Rectangle&) = default;
+    Rectangle(Rectangle&& rhs) : width(rhs.width), height(rhs.height) {
+        rhs.width = 0;
+        rhs.height = 0;
+    }
+    float Area() const { return width * height; }
+    float Area(float bias) const { return width * height + bias; }
 
-    double Area() const {return width * height;}
-    double Area(double bias) const {return width * height + bias;}
-
-    void Info() const{
+    void Info() const {
         auto s = string_format("Rectangle[w = %.2f, h = %.2f]", width, height);
         std::cout << s << std::endl;
     }
-    private:
-    double width;
-    double height;
+
+    ~Rectangle() = default;
+
+private:
+    float width;
+    float height;
 };
 
-int main(){
-    auto proxy = pro::make_proxy<Drawable>(Rectangle(1.0, 2.0));
+template <typename Tp> struct custom_allocator {
+    std::allocator<Tp> internal_alloc;
+    typedef Tp value_type;
 
-    std::cout << string_format("Area = %.2f", proxy->Area()) << std::endl;
-    std::cout << string_format("Area + 1.0 = %.2f", proxy->Area(1.0)) << std::endl;
+    Tp* allocate(size_t n) {
+        auto ptr = internal_alloc.allocate(n);
+        std::cout << string_format("Allocate ptr %p", ptr) << std::endl;
+        return ptr;
+    }
 
-    proxy->Info();
+    void deallocate(Tp* ptr, size_t n) {
+        std::cout << string_format("Deallocate ptr %p", ptr) << std::endl;
+        return internal_alloc.deallocate(ptr, n);
+    }
+};
+
+int main() {
+    custom_allocator<Rectangle> allocator;
+    pro::details::static_meta_manager::register_facade_allocated<Rectangle, InfoOnly>(allocator);
+
+    auto proxy = pro::make_proxy_inplace<Drawable, Rectangle>(1.0, 2.0);
+
+    auto nf = proxy.meta_->poly_cast_meta::cast_move<InfoOnly>(proxy, std::optional(allocator));
+
+    nf.value()->Info();
 }
