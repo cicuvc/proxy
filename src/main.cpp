@@ -9,23 +9,30 @@
 #include <utility>
 
 #include <unordered_map>
+#include <vector>
 
-interface_def(Drawable) {
+interface_def(Drawable)
     support_copy(pro::constraint_level::nontrivial);
     support_relocate(pro::constraint_level::nontrivial);
     support_destroy(pro::constraint_level::nontrivial);
     fn_def(Area, float() const, float(float) const);
     fn_def(Info, void() const);
-}
 interface_end(Drawable);
 
-interface_def(InfoOnly) {
+interface_def(InfoOnly)
     support_copy(pro::constraint_level::nontrivial);
     support_relocate(pro::constraint_level::nontrivial);
     support_destroy(pro::constraint_level::nontrivial);
     fn_def(Info, void() const);
-}
 interface_end(InfoOnly);
+
+interface_def_generic(Vec, class T)
+    support_copy(pro::constraint_level::nontrivial);
+    support_relocate(pro::constraint_level::nontrivial);
+    support_destroy(pro::constraint_level::nontrivial);
+    fn_def(push_back, void(const T&));
+    op_def(index, T & (size_t index) noexcept);
+interface_end_generic(Vec);
 
 template <typename... Args> std::string string_format(const std::string& format, Args... args) {
     int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
@@ -77,6 +84,10 @@ template <typename Tp> struct custom_allocator {
 };
 
 int main() {
+    auto vec_p = pro::make_proxy<Vec<int>>(std::vector<int> {});
+    vec_p->push_back(12);
+    std::cout << (*vec_p)[0] << std::endl;
+
     custom_allocator<Rectangle> allocator;
     pro::details::static_meta_manager::register_facade_allocated<Rectangle, InfoOnly>(allocator);
 
@@ -84,5 +95,5 @@ int main() {
 
     auto nf = proxy.meta_->poly_cast_meta::cast_move<InfoOnly>(proxy, std::optional(allocator));
 
-    nf.value()->Info();
+    (nf.value())->Info();
 }

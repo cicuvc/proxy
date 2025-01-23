@@ -15,4 +15,6 @@ ContinuationIndentWidth: 4
 DerivePointerAlignment: true
 SpaceInEmptyBlock: false
 
+MacroBlockBegin: 'interface_def|interface_def_generic'
+MacroBlockEnd: 'interface_end|interface_end_generic'
 ...

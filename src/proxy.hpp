@@ -1149,11 +1149,12 @@ class proxy : public details::facade_traits<F>::direct_accessor {
   }
 
   template <class P>
-  proxy(P&& ptr) noexcept(std::is_nothrow_constructible_v<std::decay_t<P>, P>)
+  proxy(P&& ptr, 
+    typename std::enable_if<!details::is_in_place_type<std::decay_t<P>>, int>::type = 0,
+    typename std::enable_if<proxiable<std::decay_t<P>, F>, int>::type = 0,
+    typename std::enable_if<std::is_constructible_v<std::decay_t<P>, P>, int>::type = 0) 
+    noexcept(std::is_nothrow_constructible_v<std::decay_t<P>, P>)
       : proxy() { 
-        static_assert(!details::is_in_place_type<std::decay_t<P>> &&
-          proxiable<std::decay_t<P>, F> &&
-          std::is_constructible_v<std::decay_t<P>, P>, "Unable to move P as proxy<P>");
         initialize<std::decay_t<P>>(std::forward<P>(ptr)); }
         
   template <typename P, class... Args>
@@ -2882,58 +2883,73 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
 
 #define interface_def(name)                                                    \
     struct name;                                                               \
-    namespace inf_##name {                                                     \
+    struct inf_##name {                                                     \
         template <int N> struct TypeN {};                                      \
         template <> struct TypeN<__COUNTER__> {                                \
-            using T = pro::facade_builder;                                     \
+            using __T = pro::facade_builder;                                     \
         };                                                                     \
         [[maybe_unused]] const int Pad = __COUNTER__;                          \
-    }                                                                          \
-    namespace inf_##name
+                                                                              
 
 #define interface_end(name)                                                    \
-    struct name                                                                \
+    }; struct name                                                                \
         : inf_##name::TypeN<__COUNTER__                                        \
-            - 2>::T::support_copy<pro::constraint_level::nontrivial>::build {  \
+            - 2>::__T::build {  \
+    };
+
+#define interface_def_generic(name, ...)                                                    \
+    template<typename ...Args> struct name;                                                               \
+    template<__VA_ARGS__> struct inf_##name {                                                     \
+        template <int N> struct TypeN {};                                      \
+        template <> struct TypeN<__COUNTER__> {                                \
+            using __T = pro::facade_builder;                                     \
+        };                                                                     \
+        [[maybe_unused]] const int Pad = __COUNTER__;                          \
+                                                                              
+
+#define interface_end_generic(name)                                                    \
+    }; template<typename ...Args>struct name                                                                \
+        :  inf_##name<Args...>::template TypeN<__COUNTER__                                        \
+            - 2>::__T::build {  \
     };
 
 #define support_copy(copy)                                                     \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T = typename TypeN<__COUNTER__ - 3>::T::support_copy<copy>;      \
+        using __T = typename TypeN<__COUNTER__ - 3>::__T::template support_copy<copy>;      \
     };
 
 #define support_relocate(rel)                                                     \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T = typename TypeN<__COUNTER__ - 3>::T::support_relocation<rel>;      \
+        using __T = typename TypeN<__COUNTER__ - 3>::__T::template support_relocation<rel>;      \
     };
 #define support_destroy(dest)                                                     \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T =                                                              \
-          typename TypeN<__COUNTER__ - 3>::T::support_destruction<dest>;       \
+        using __T =                                                              \
+          typename TypeN<__COUNTER__ - 3>::__T::template support_destruction<dest>;       \
     };
 #define fn_def(name, ...)                                                \
     PRO_DEF_MEM_DISPATCH(Mem##name, name);                                     \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T = typename TypeN<__COUNTER__                                   \
-          - 3>::T::add_convention<Mem##name, __VA_ARGS__>;                       \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<Mem##name, __VA_ARGS__>;                       \
     };
 
 #define op_def(name, signature)                                                \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T = typename TypeN<__COUNTER__                                   \
-          - 3>::T::add_convention<pro::operator_dispatch<pro::operator_##name>, signature>;   \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<pro::operator_dispatch<pro::operator_##name>, signature>;   \
     };
 
 #define econv_def(type)                                                        \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T = typename TypeN<__COUNTER__                                   \
-          - 3>::T::add_convention<pro::conversion_dispatch, type()>;           \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<pro::conversion_dispatch, type()>;           \
     };
 
 #define iconv_def(type)                                                        \
     template <> struct TypeN<__COUNTER__> {                                    \
-        using T = typename TypeN<__COUNTER__                                   \
-          - 3>::T::add_convention<pro::implicit_conversion_dispatch, type()>;  \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<pro::implicit_conversion_dispatch, type()>;  \
     };
 
 
