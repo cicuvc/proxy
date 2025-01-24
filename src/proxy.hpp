@@ -367,7 +367,9 @@ struct overload_traits_impl : applicable_traits {
 };
 template <class R, class... Args>
 struct overload_traits<R(Args...)>
-    : overload_traits_impl<qualifier_type::lv, false, R, Args...> {};
+    : overload_traits_impl<qualifier_type::lv, false, R, Args...> {
+      static constexpr bool qt = true;
+    };
 template <class R, class... Args>
 struct overload_traits<R(Args...) noexcept>
     : overload_traits_impl<qualifier_type::lv, true, R, Args...> {};
@@ -471,20 +473,17 @@ struct conv_traits_impl : conv_traits_impl_helpers<C, Os...>::type {};
 
 template<typename C>
 struct conv_traits_helpers{
-  template<typename T>
-  struct local_true{};
-
   template<typename CX>
   static auto test(
-    CX *,
-    local_true<typename CX::dispatch_type>* = nullptr,
-    local_true<typename CX::overload_types>* = nullptr , 
+    std::in_place_type_t<CX>,
+    std::in_place_type_t<typename CX::dispatch_type>* = nullptr,
+    std::in_place_type_t<typename CX::overload_types>* = nullptr , 
     typename std::enable_if<std::is_trivial_v<typename C::dispatch_type>, int>::type = 0) 
     -> instantiated_t<conv_traits_impl, typename C::overload_types, C>;
 
   static auto test(...) -> inapplicable_traits;
 
-  using type = decltype(test((C *)nullptr));
+  using type = decltype(test(std::in_place_type<C>));
 };
 
 
@@ -512,7 +511,7 @@ template <bool IsDirect, class R>
 struct refl_meta {
   template <class P>
   constexpr explicit refl_meta(std::in_place_type_t<P>)
-      : reflector(refl_meta_ctor_helpers<P, IsDirect>::type()) {}
+      : reflector(typename refl_meta_ctor_helpers<P, IsDirect>::type()) {}
 
   R reflector;
 };
@@ -981,7 +980,7 @@ namespace details{
 
   struct static_meta_manager{
     enum ptr_type{
-      inplace, allocated, compact
+      inplace, allocated, compact, raw
     };
 
     struct meta_info{
@@ -998,8 +997,8 @@ namespace details{
       template<class P>
       meta_info(std::byte *meta_ptr_, std::in_place_type_t<P>, const static_type_token& allocator_)
         : meta_ptr(meta_ptr_), 
-        size(sizeof(typename P::type)),
-        align(alignof(typename P::type)), 
+        size(sizeof(typename get_object_fn_collections<P>::value_type)),
+        align(alignof(typename get_object_fn_collections<P>::value_type)), 
         allocator(allocator_), 
         type(get_object_fn_collections<P>::type),
         create_ptr_copy(&get_object_fn_collections<P>::create_ptr_copy),
@@ -1034,8 +1033,8 @@ namespace details{
       registered<P, F> = true;
 
       auto meta_ = meta_ptr<typename facade_traits<F>::meta>{std::in_place_type<P>};
-      auto key = meta_key{std::in_place_type<F>, std::in_place_type<typename P::type>};
-      auto value = meta_info((std::byte*)meta_.get_ptr(), std::in_place_type<P>, static_type_token{std::in_place_type<typename P::allocator>});
+      auto key = meta_key{std::in_place_type<F>, std::in_place_type<typename get_object_fn_collections<P>::value_type>};
+      auto value = meta_info((std::byte*)meta_.get_ptr(), std::in_place_type<P>, static_type_token{std::in_place_type<typename get_object_fn_collections<P>::allocator>});
 
       decltype(meta_map)::iterator iter;
 
@@ -1143,8 +1142,6 @@ class proxy : public details::facade_traits<F>::direct_accessor {
         rhs.meta_->_Traits::relocatability_meta::dispatcher(*ptr_, *rhs.ptr_);
       }
       meta_ = rhs.meta_;
-
-      rhs.reset();
     }
   }
 
@@ -1533,6 +1530,8 @@ proxy<F> make_proxy_impl(Args&&... args) {
 
 template<class P>
 struct get_object_fn_collections<pro::details::inplace_ptr<P>>{
+  using value_type = P;
+  using allocator = void;
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(&**(pro::details::inplace_ptr<P> *)ptrs);
   }
@@ -1546,6 +1545,8 @@ struct get_object_fn_collections<pro::details::inplace_ptr<P>>{
 };
 template<class P, class Alloc>
 struct get_object_fn_collections<pro::details::allocated_ptr<P, Alloc>>{
+  using value_type = P;
+  using allocator = Alloc;
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(&**(pro::details::allocated_ptr<P, Alloc> *)ptrs);
   }
@@ -1559,6 +1560,8 @@ struct get_object_fn_collections<pro::details::allocated_ptr<P, Alloc>>{
 };
 template<class P, class Alloc>
 struct get_object_fn_collections<pro::details::compact_ptr<P, Alloc>>{
+  using value_type = P;
+  using allocator = Alloc;
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(&**(pro::details::compact_ptr<P, Alloc> *)ptrs);
   }
@@ -1571,6 +1574,22 @@ struct get_object_fn_collections<pro::details::compact_ptr<P, Alloc>>{
   static constexpr static_meta_manager::ptr_type type = static_meta_manager::ptr_type::compact;
 };
 
+template<class P>
+struct get_object_fn_collections<P *>{
+  using value_type = P *;
+  using allocator = void;
+  static std::byte* get_ptr(std::byte* ptrs){
+    return (std::byte*)(*(P **)ptrs);
+  }
+  static void create_ptr_copy(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
+    new(dst) P ((const P&)**(P**)obj);
+  }
+  static void create_ptr_move(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
+    new(dst) P((P&&)**(P**)obj);
+  }
+  static constexpr static_meta_manager::ptr_type type = static_meta_manager::ptr_type::raw;
+};
+
 struct poly_cast_meta{
   constexpr poly_cast_meta() noexcept :proxiable_type(), addr_fn(nullptr) {}
   using get_object_addr_fn = std::byte *(std::byte *);
@@ -1581,7 +1600,7 @@ struct poly_cast_meta{
   }
 
   template <class P>
-  constexpr explicit poly_cast_meta(std::in_place_type_t<P>) noexcept :proxiable_type(std::in_place_type<typename P::type>), addr_fn(get_object_fn<P>()) {
+  constexpr explicit poly_cast_meta(std::in_place_type_t<P>) noexcept :proxiable_type(std::in_place_type<typename get_object_fn_collections<P>::value_type>), addr_fn(get_object_fn<P>()) {
   }
 
   template<class T, class F>
@@ -2084,10 +2103,10 @@ using merge_conv_tuple_t = recursive_reduction_t<add_conv_t, Cs1, Cs2...>;
 template <class Cs, class F, bool WithUpwardConversion>
 using merge_facade_conv_t = typename add_upward_conversion_conv<
     instantiated_t<merge_conv_tuple_t, typename F::convention_types, Cs>, F,
-    WithUpwardConversion ? F::constraints.copyability : constraint_level::none,
+    WithUpwardConversion ? F::constraints::copyability : constraint_level::none,
     (WithUpwardConversion &&
-        F::constraints.copyability != constraint_level::trivial) ?
-        F::constraints.relocatability : constraint_level::none>::type;
+        F::constraints::copyability != constraint_level::trivial) ?
+        F::constraints::relocatability : constraint_level::none>::type;
 
 struct proxy_view_dispatch : cast_dispatch_base<false, true> {
   template <class T>
@@ -2674,8 +2693,12 @@ using operator_set_and = const_string<'&','='>;
 using operator_set_or =  const_string<'|','='>;
 using operator_set_xor = const_string<'^','='>;
 
+using operator_set_shl = const_string<'<','<','='>;
+using operator_set_shr = const_string<'>','>','='>;
+
 using operator_call = const_string<'(',')'>;
 using operator_index = const_string<'[',']'>;
+using operator_memptr = const_string<'-','>','*'>;
 
 template <>
 struct operator_dispatch<const_string<'(',')'>, false> {
@@ -2883,7 +2906,7 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
 
 #define interface_def(name)                                                    \
     struct name;                                                               \
-    namespace ninf_##name{ struct inf_##name {                                                     \
+    struct ninf_##name{ struct inf_##name {                                                     \
         template <int N> struct TypeN {};                                      \
         template <> struct TypeN<__COUNTER__> {                                \
             using __T = pro::facade_builder;                                     \
@@ -2892,7 +2915,7 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
                                                                               
 
 #define interface_end(name)                                                    \
-    }; } struct name                                                                \
+    }; }; struct name                                                                \
         : ninf_##name::inf_##name::TypeN<__COUNTER__                                        \
             - 2>::__T::build {  \
     };
@@ -2908,9 +2931,13 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
                                                                               
 
 #define interface_end_generic(name)                                                    \
-    }; } template<typename ...Args>struct name                                                                \
+    }; }; template<typename ...Args>struct name                                                                \
         :  ninf_##name::inf_##name<Args...>::template TypeN<__COUNTER__                                        \
             - 2>::__T::build {  \
+    };
+#define restrict_layout(size, align)                                                     \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__ - 3>::__T::template restrict_layout<size, align>;      \
     };
 
 #define support_copy(copy)                                                     \
@@ -2927,6 +2954,12 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
         using __T =                                                              \
           typename TypeN<__COUNTER__ - 3>::__T::template support_destruction<dest>;       \
     };
+
+#define add_direct_reflect(dest)                                                     \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T =                                                              \
+          typename TypeN<__COUNTER__ - 3>::__T::template add_direct_reflection<dest>;       \
+    };
 #define fn_def(name, ...)                                                \
     PRO_DEF_MEM_DISPATCH(Mem##name, name);                                     \
     template <> struct TypeN<__COUNTER__> {                                    \
@@ -2934,10 +2967,28 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
           - 3>::__T::template add_convention<Mem##name, __VA_ARGS__>;                       \
     };
 
-#define op_def(name, signature)                                                \
+#define add_conv(name, ...)                                                \
     template <> struct TypeN<__COUNTER__> {                                    \
         using __T = typename TypeN<__COUNTER__                                   \
-          - 3>::__T::template add_convention<pro::operator_dispatch<pro::operator_##name>, signature>;   \
+          - 3>::__T::template add_convention<name, __VA_ARGS__>;                       \
+    };
+
+#define add_facade(name)                                                \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_facade<name>;                       \
+    };
+
+#define op_def(name, ...)                                                \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<pro::operator_dispatch<pro::operator_##name>, __VA_ARGS__>;   \
+    };
+
+#define op_direct_def(name, ...)                                                \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_direct_convention<pro::operator_dispatch<pro::operator_##name>, __VA_ARGS__>;   \
     };
 
 #define econv_def(type)                                                        \
