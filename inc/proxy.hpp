@@ -2381,7 +2381,7 @@ struct proxy_cast_accessor_impl {
   using _Self = add_qualifier_t<
       adl_accessor_arg_t<F, IsDirect>, overload_traits<O>::qualifier>;
   template <class T>
-  friend T proxy_cast(_Self self) {
+  friend T proxy_cast(_Self self, std::in_place_type_t<T>) {
     static_assert(!std::is_rvalue_reference_v<T>);
     if (!access_proxy<F>(self).has_value()) { ___PRO_THROW(bad_proxy_cast{}); }
     if constexpr (std::is_lvalue_reference_v<T>) {
@@ -2404,7 +2404,7 @@ struct proxy_cast_accessor_impl {
     }
   }
   template <class T>
-  friend T* proxy_cast(std::remove_reference_t<_Self>* self) noexcept{
+  T* proxy_cast_ptr(std::remove_reference_t<_Self>* self, std::in_place_type_t<T>) noexcept{
     static_assert(std::is_lvalue_reference_v<_Self>, "Self type should be lvalue reference");
     if (!access_proxy<F>(*self).has_value()) { return nullptr; }
     void* result = nullptr;
