@@ -242,17 +242,21 @@ struct ptr_traits_applic: applicable_traits{
   using target_type = decltype(*std::declval<add_qualifier_t<P, Q>>());
 };
 
+struct inapplicable_traits_applic: inapplicable_traits{
+  using target_type = void;
+};
+
 template <class P, qualifier_type Q, bool NE>
 struct ptr_traits_helpers{
   template<class PP>
   static auto test(
-    std::type_identity<PP> *, 
+    std::in_place_type_t<PP>, 
     std::in_place_type_t<decltype(*std::declval<add_qualifier_t<PP, Q>>())>* = nullptr
     ) -> ptr_traits_applic<PP, Q, NE>;
 
-  static auto test(...) -> inapplicable_traits;
+  static auto test(...) -> inapplicable_traits_applic;
 
-  using type = decltype(test((std::type_identity<P> *)nullptr));
+  using type = decltype(test(std::in_place_type<P>));
 };
 
 
@@ -1986,8 +1990,14 @@ struct explicit_conversion_adapter {
   template <class U>
   operator U() noexcept(std::is_nothrow_constructible_v<U, T>)
       { 
-        static_assert(std::is_constructible_v<U, T>, "T cannot be converted into U");
-        return U{std::forward<T>(value_)}; }
+        //static_assert(std::is_constructible_v<U, T>, "T cannot be converted into U");
+        if constexpr(std::is_constructible_v<U, T>){
+          return U{std::forward<T>(value_)};
+        }else{
+          std::abort();
+          //return *std::launder((U*)nullptr);
+        }
+      }
 
  private:
   T&& value_;
