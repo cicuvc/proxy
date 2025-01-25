@@ -4,12 +4,13 @@
 #include <type_traits>
 
 namespace proxy_lifetime_tests_details {
-
-    struct TestFacade : pro::facade_builder ::add_convention<utils::spec::FreeToString, std::string()>::support_relocation<
-                            pro::constraint_level::nontrivial>::support_copy<pro::constraint_level::nontrivial>
-                        //::add_direct_convention<pro::conversion_dispatch, utils::LifetimeTracker::Session() const&,
-                        //: utils::LifetimeTracker::Session()&&>
-                        ::build {};
+    interface_def(TestFacade)
+        add_conv(utils::spec::FreeToString, std::string());
+        add_direct_conv(pro::conversion_dispatch, utils::LifetimeTracker::Session() const&,
+                        utils::LifetimeTracker::Session()&&);
+        support_relocate(pro::constraint_level::nontrivial);
+        support_copy(pro::constraint_level::nontrivial);
+    interface_end(TestFacade);
 
     struct TestTrivialFacade
         : pro::facade_builder ::add_facade<utils::spec::Stringable>::support_copy<pro::constraint_level::trivial>::
@@ -969,3 +970,59 @@ TEST(ProxyLifetimeTests, TestSwap_Null_Null) {
 }
 
 
+TEST(ProxyLifetimeTests, Test_DirectConvension_Lvalue) {
+  utils::LifetimeTracker tracker;
+  std::vector<utils::LifetimeOperation> expected_ops;
+  {
+    pro::proxy<details::TestFacade> p{ std::in_place_type<utils::LifetimeTracker::Session>, &tracker };
+    expected_ops.emplace_back(1, utils::LifetimeOperationType::kValueConstruction);
+    auto session = utils::LifetimeTracker::Session{p};
+    ASSERT_TRUE(p.has_value());
+    ASSERT_EQ(ToString(*p), "Session 1");
+    ASSERT_EQ(to_string(session), "Session 2");
+    expected_ops.emplace_back(2, utils::LifetimeOperationType::kCopyConstruction);
+    ASSERT_TRUE(tracker.GetOperations() == expected_ops);
+  }
+  expected_ops.emplace_back(2, utils::LifetimeOperationType::kDestruction);
+  expected_ops.emplace_back(1, utils::LifetimeOperationType::kDestruction);
+  ASSERT_TRUE(tracker.GetOperations() == expected_ops);
+}
+
+TEST(ProxyLifetimeTests, Test_DirectConvension_Rvalue) {
+  utils::LifetimeTracker tracker;
+  std::vector<utils::LifetimeOperation> expected_ops;
+  {
+    pro::proxy<details::TestFacade> p{ std::in_place_type<utils::LifetimeTracker::Session>, &tracker };
+    expected_ops.emplace_back(1, utils::LifetimeOperationType::kValueConstruction);
+    auto session = utils::LifetimeTracker::Session{std::move(p)};
+    ASSERT_FALSE(p.has_value());
+    ASSERT_EQ(to_string(session), "Session 2");
+    expected_ops.emplace_back(2, utils::LifetimeOperationType::kMoveConstruction);
+    expected_ops.emplace_back(1, utils::LifetimeOperationType::kDestruction);
+    ASSERT_TRUE(tracker.GetOperations() == expected_ops);
+  }
+  expected_ops.emplace_back(2, utils::LifetimeOperationType::kDestruction);
+  ASSERT_TRUE(tracker.GetOperations() == expected_ops);
+}
+
+TEST(ProxyLifetimeTests, Test_DirectConvension_Rvalue_Exception) {
+  utils::LifetimeTracker tracker;
+  std::vector<utils::LifetimeOperation> expected_ops;
+  {
+    pro::proxy<details::TestFacade> p{ std::in_place_type<utils::LifetimeTracker::Session>, &tracker };
+    expected_ops.emplace_back(1, utils::LifetimeOperationType::kValueConstruction);
+    tracker.ThrowOnNextConstruction();
+    bool exception_thrown = false;
+    try {
+      auto session = static_cast<utils::LifetimeTracker::Session>(std::move(p));
+    } catch (const utils::ConstructionFailure& e) {
+      exception_thrown = true;
+      ASSERT_EQ(e.type_, utils::LifetimeOperationType::kMoveConstruction);
+    }
+    ASSERT_TRUE(exception_thrown);
+    ASSERT_FALSE(p.has_value());
+    expected_ops.emplace_back(1, utils::LifetimeOperationType::kDestruction);
+    ASSERT_TRUE(tracker.GetOperations() == expected_ops);
+  }
+  ASSERT_TRUE(tracker.GetOperations() == expected_ops);
+}

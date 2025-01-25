@@ -1984,8 +1984,9 @@ struct explicit_conversion_adapter {
   explicit_conversion_adapter(const explicit_conversion_adapter&) = delete;
 
   template <class U>
-  operator typename std::enable_if<std::is_constructible_v<U, T>, U>::type() noexcept(std::is_nothrow_constructible_v<U, T>)
+  operator U() noexcept(std::is_nothrow_constructible_v<U, T>)
       { 
+        static_assert(std::is_constructible_v<U, T>, "T cannot be converted into U");
         return U{std::forward<T>(value_)}; }
 
  private:
@@ -3060,6 +3061,12 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
     template <> struct TypeN<__COUNTER__> {                                    \
         using __T = typename TypeN<__COUNTER__                                   \
           - 3>::__T::template add_convention<name, __VA_ARGS__>;                       \
+    };
+
+#define add_direct_conv(name, ...)                                                \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_direct_convention<name, __VA_ARGS__>;                       \
     };
 
 #define add_facade(name)                                                \
