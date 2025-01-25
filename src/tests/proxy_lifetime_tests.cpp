@@ -1,4 +1,4 @@
-#include "../proxy.hpp"
+#include <proxy.hpp>
 #include "utils.hpp"
 #include <gtest/gtest.h>
 #include <type_traits>
@@ -29,6 +29,11 @@ namespace details = proxy_lifetime_tests_details;
 TEST(ProxyLifetimeTests, TestDefaultConstrction) {
     pro::proxy<details::TestFacade> p;
     ASSERT_FALSE(p.has_value());
+}
+
+TEST(ProxyLifetimeTests, TestNullConstrction) {
+  pro::proxy<details::TestFacade> p = nullptr;
+  ASSERT_FALSE(p.has_value());
 }
 
 TEST(ProxyLifetimeTests, TestPolyConstrction_FromValue) {
@@ -230,7 +235,7 @@ TEST(ProxyLifetimeTests, TestNullAssignment_ToValue) {
     {
         pro::proxy<details::TestFacade> p { std::in_place_type<utils::LifetimeTracker::Session>, &tracker };
         expected_ops.emplace_back(1, utils::LifetimeOperationType::kValueConstruction);
-        p.reset();
+        p = nullptr;
         ASSERT_FALSE(p.has_value());
         expected_ops.emplace_back(1, utils::LifetimeOperationType::kDestruction);
         ASSERT_TRUE(tracker.GetOperations() == expected_ops);
@@ -240,7 +245,7 @@ TEST(ProxyLifetimeTests, TestNullAssignment_ToValue) {
 
 TEST(ProxyLifetimeTests, TestNullAssignment_ToNull) {
     pro::proxy<details::TestFacade> p;
-    p.reset();
+    p = nullptr;
     ASSERT_FALSE(p.has_value());
 }
 
@@ -943,10 +948,10 @@ TEST(ProxyLifetimeTests, TestEqualsToNullptr) {
     {
         pro::proxy<details::TestFacade> p;
         ASSERT_TRUE(p == nullptr);
-        //ASSERT_TRUE(nullptr == p);
+        ASSERT_TRUE(nullptr == p); 
         p.emplace<utils::LifetimeTracker::Session>(&tracker);
         ASSERT_TRUE(p != nullptr);
-        //ASSERT_TRUE(nullptr != p);
+        ASSERT_TRUE(nullptr != p);
         ASSERT_EQ(ToString(*p), "Session 1");
         expected_ops.emplace_back(1, utils::LifetimeOperationType::kValueConstruction);
         ASSERT_TRUE(tracker.GetOperations() == expected_ops);

@@ -246,7 +246,8 @@ template <class P, qualifier_type Q, bool NE>
 struct ptr_traits_helpers{
   template<class PP>
   static auto test(
-    std::type_identity<PP> *
+    std::type_identity<PP> *, 
+    std::in_place_type_t<decltype(*std::declval<add_qualifier_t<PP, Q>>())>* = nullptr
     ) -> ptr_traits_applic<PP, Q, NE>;
 
   static auto test(...) -> inapplicable_traits;
@@ -1148,6 +1149,7 @@ class proxy : public details::facade_traits<F>::direct_accessor {
 
   template <class P>
   proxy(P&& ptr, 
+    typename std::enable_if<!std::is_same_v<P, std::nullptr_t>, int>::type = 0, 
     typename std::enable_if<!details::is_in_place_type<std::decay_t<P>>, int>::type = 0,
     typename std::enable_if<proxiable<std::decay_t<P>, F>, int>::type = 0,
     typename std::enable_if<std::is_constructible_v<std::decay_t<P>, P>, int>::type = 0) 
@@ -1314,6 +1316,8 @@ class proxy : public details::facade_traits<F>::direct_accessor {
       { return lhs.has_value(); }
   friend bool operator==(std::nullptr_t, const proxy& lhs) noexcept
       { return !lhs.has_value(); }
+  friend bool operator!=(std::nullptr_t, const proxy& lhs) noexcept
+      { return lhs.has_value(); }
 
  public:
   template <class P, class... Args>

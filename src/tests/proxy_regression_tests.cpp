@@ -1,4 +1,4 @@
-#include "../proxy.hpp"
+#include <proxy.hpp>
 #include <gtest/gtest.h>
 
 // https://github.com/microsoft/proxy/issues/213

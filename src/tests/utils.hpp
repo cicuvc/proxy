@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "../proxy.hpp"
+#include <proxy.hpp>
 
 namespace utils {
 

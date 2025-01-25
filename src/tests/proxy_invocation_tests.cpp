@@ -11,7 +11,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include "../proxy.hpp"
+#include <proxy.hpp>
 #include "utils.hpp"
 #include <gtest/gtest.h>
 

@@ -1,6 +1,6 @@
 #include <memory_resource>
 
-#include "../proxy.hpp"
+#include <proxy.hpp>
 #include "utils.hpp"
 #include <gtest/gtest.h>
 

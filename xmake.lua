@@ -8,6 +8,14 @@ target("proxy")
     add_files("src/*.cpp")
     add_cxxflags("-std=c++17","-Werror","-Wall","-Wextra","-fstrict-aliasing","-Wstrict-aliasing","-ftemplate-backtrace-limit=0")
 
+target("samples")
+    set_kind("binary")
+    set_toolchains('clang')
+    add_includedirs("inc")
+    add_files("src/samples/*.cpp")
+    add_cxxflags("-std=c++17","-Werror","-Wall","-Wextra","-fstrict-aliasing","-Wstrict-aliasing","-ftemplate-backtrace-limit=0")
+
+
 target("test")
     set_kind("binary")
     set_toolchains('clang')
