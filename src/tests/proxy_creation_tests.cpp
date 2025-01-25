@@ -24,7 +24,7 @@ namespace proxy_creation_tests_details {
         };
 
         bool SboEnabled;
-        bool AllocatorAllocatesForItself;
+        bool AllocatorAllocatesForItself; 
     };
 
     interface_def(TestLargeStringable)

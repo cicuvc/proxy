@@ -1001,8 +1001,8 @@ namespace details{
         align(alignof(typename get_object_fn_collections<P>::value_type)), 
         allocator(allocator_), 
         type(get_object_fn_collections<P>::type),
-        create_ptr_copy(&get_object_fn_collections<P>::create_ptr_copy),
-        create_ptr_move(&get_object_fn_collections<P>::create_ptr_move) {}
+        create_ptr_copy(get_object_fn_collections<P>::get_copy_fn()),
+        create_ptr_move(get_object_fn_collections<P>::get_move_fn()) {}
     };
     struct meta_key{
       static_type_token facade_type;
@@ -1117,9 +1117,9 @@ class proxy : public details::facade_traits<F>::direct_accessor {
     static_assert(F::constraints::copyability > constraint_level::none, "Copy not supported for facade F");
 
     if constexpr(F::constraints::copyability == constraint_level::trivial){
-      rhs.ia_ = ia_;
-      rhs.meta_ = meta_;
-      std::copy(ptr_, ptr_ + sizeof(ptr_), rhs.ptr_);
+      ia_ = rhs.ia_;
+      meta_ = rhs.meta_;
+      std::copy(rhs.ptr_, rhs.ptr_ + sizeof(rhs.ptr_), ptr_);
     }else{
       if (rhs.meta_.has_value()) {
         rhs.meta_->_Traits::copyability_meta::dispatcher(*ptr_, *rhs.ptr_);
@@ -1127,11 +1127,12 @@ class proxy : public details::facade_traits<F>::direct_accessor {
       }
     }
   }
-  proxy(proxy&& rhs)
+  template<class SelfFacade>
+  proxy(proxy<SelfFacade>&& rhs, 
+    typename std::enable_if<std::is_same_v<SelfFacade, F>, int>::type = 0,
+    typename std::enable_if<(SelfFacade::constraints::relocatability >= constraint_level::nontrivial &&
+          SelfFacade::constraints::copyability != constraint_level::trivial), int>::type = 0)
       noexcept(F::constraints::relocatability == constraint_level::nothrow) {
-
-    static_assert(F::constraints::relocatability >= constraint_level::nontrivial &&
-          F::constraints::copyability != constraint_level::trivial, "Facade F doesn't support move/copy");
 
     if (rhs.meta_.has_value()) {
       details::meta_ptr_reset_guard guard{rhs.meta_};
@@ -1193,7 +1194,7 @@ class proxy : public details::facade_traits<F>::direct_accessor {
       std::copy(rhs.ptr_, rhs.ptr_ + sizeof(rhs.ptr_), ptr_);
     }else if constexpr(is_copy_nontrivial){
       if (this != &rhs) {
-          if constexpr (F::constraints.copyability == constraint_level::nothrow) {
+          if constexpr (F::constraints::copyability == constraint_level::nothrow) {
             std::destroy_at(this);
             std::construct_at(this, rhs);
           } else {
@@ -1251,12 +1252,12 @@ class proxy : public details::facade_traits<F>::direct_accessor {
         static_assert(F::constraints::destructibility >= constraint_level::nontrivial, "F doesn't support destruction");
         std::destroy_at(this); meta_.reset(); }
   void swap(proxy& rhs)
-      noexcept(F::constraints.relocatability >= constraint_level::nothrow ||
-          F::constraints.copyability == constraint_level::trivial) {
-    static_assert(F::constraints.relocatability >= constraint_level::nontrivial ||
-          F::constraints.copyability == constraint_level::trivial, "F doesn't support swap");
-    if constexpr (F::constraints.relocatability == constraint_level::trivial ||
-        F::constraints.copyability == constraint_level::trivial) {
+      noexcept(F::constraints::relocatability >= constraint_level::nothrow ||
+          F::constraints::copyability == constraint_level::trivial) {
+    static_assert(F::constraints::relocatability >= constraint_level::nontrivial ||
+          F::constraints::copyability == constraint_level::trivial, "F doesn't support swap");
+    if constexpr (F::constraints::relocatability == constraint_level::trivial ||
+        F::constraints::copyability == constraint_level::trivial) {
       std::swap(meta_, rhs.meta_);
       std::swap(ptr_, rhs.ptr);
     } else {
@@ -1276,22 +1277,22 @@ class proxy : public details::facade_traits<F>::direct_accessor {
   template <typename P, class... Args>
   P& emplace(Args&&... args)
       noexcept(std::is_nothrow_constructible_v<P, Args...> &&
-          F::constraints.destructibility >= constraint_level::nothrow)
+          F::constraints::destructibility >= constraint_level::nothrow)
       { 
         static_assert(proxiable<P, F>, "P should be proxiable as type F");
         static_assert(std::is_constructible_v<P, Args...>, "P should be able to construct with given arguments");
-        static_assert(F::constraints.destructibility >= constraint_level::nontrivial, "Desctuctibility of P should be at least non-trivial");
+        static_assert(F::constraints::destructibility >= constraint_level::nontrivial, "Desctuctibility of P should be at least non-trivial");
 
         reset(); return initialize<P>(std::forward<Args>(args)...); }
   template <typename P, class U, class... Args>
   P& emplace(std::initializer_list<U> il, Args&&... args)
       noexcept(std::is_nothrow_constructible_v<
           P, std::initializer_list<U>&, Args...> &&
-          F::constraints.destructibility >= constraint_level::nothrow)
+          F::constraints::destructibility >= constraint_level::nothrow)
       { 
         static_assert(proxiable<P, F>, "P should be proxiable as type F");
         static_assert(std::is_constructible_v<P, std::initializer_list<U>&, Args...>, "P should be able to construct with given arguments");
-        static_assert(F::constraints.destructibility >= constraint_level::nontrivial, "Desctuctibility of P should be at least non-trivial");
+        static_assert(F::constraints::destructibility >= constraint_level::nontrivial, "Desctuctibility of P should be at least non-trivial");
 
         reset(); return initialize<P>(il, std::forward<Args>(args)...); }
   proxy_indirect_accessor<F>* operator->() noexcept
@@ -1308,6 +1309,10 @@ class proxy : public details::facade_traits<F>::direct_accessor {
   friend void swap(proxy& lhs, proxy& rhs) noexcept(noexcept(lhs.swap(rhs)))
       { lhs.swap(rhs); }
   friend bool operator==(const proxy& lhs, std::nullptr_t) noexcept
+      { return !lhs.has_value(); }
+  friend bool operator!=(const proxy& lhs, std::nullptr_t) noexcept
+      { return lhs.has_value(); }
+  friend bool operator==(std::nullptr_t, const proxy& lhs) noexcept
       { return !lhs.has_value(); }
 
  public:
@@ -1535,6 +1540,18 @@ struct get_object_fn_collections<pro::details::inplace_ptr<P>>{
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(&**(pro::details::inplace_ptr<P> *)ptrs);
   }
+  static constexpr void (*get_copy_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_copy_constructible_v<P>){
+      return &create_ptr_copy;
+    }
+    return nullptr;
+  }
+  static constexpr void (*get_move_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_move_constructible_v<P>){
+      return &create_ptr_move;
+    }
+    return nullptr;
+  }
   static void create_ptr_copy(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
     new(dst) pro::details::inplace_ptr<P>((const P&)*(const P*)obj);
   }
@@ -1550,6 +1567,18 @@ struct get_object_fn_collections<pro::details::allocated_ptr<P, Alloc>>{
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(&**(pro::details::allocated_ptr<P, Alloc> *)ptrs);
   }
+  static constexpr void (*get_copy_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_copy_constructible_v<P>){
+      return &create_ptr_copy;
+    }
+    return nullptr;
+  }
+  static constexpr void (*get_move_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_move_constructible_v<P>){
+      return &create_ptr_move;
+    }
+    return nullptr;
+  }
   static void create_ptr_copy(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
     new(dst) pro::details::allocated_ptr<P, Alloc>((const Alloc&)*(const Alloc*)alloc,(const P&)*(P*)obj);
   }
@@ -1564,6 +1593,18 @@ struct get_object_fn_collections<pro::details::compact_ptr<P, Alloc>>{
   using allocator = Alloc;
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(&**(pro::details::compact_ptr<P, Alloc> *)ptrs);
+  }
+  static constexpr void (*get_copy_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_copy_constructible_v<P>){
+      return &create_ptr_copy;
+    }
+    return nullptr;
+  }
+  static constexpr void (*get_move_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_move_constructible_v<P>){
+      return &create_ptr_move;
+    }
+    return nullptr;
   }
   static void create_ptr_copy(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
     new(dst) pro::details::compact_ptr<P, Alloc>((const Alloc&)*(const Alloc*)alloc,(const P&)*(P*)obj);
@@ -1581,11 +1622,45 @@ struct get_object_fn_collections<P *>{
   static std::byte* get_ptr(std::byte* ptrs){
     return (std::byte*)(*(P **)ptrs);
   }
+  static constexpr void (*get_copy_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    return &create_ptr_copy;
+  }
+  static constexpr void (*get_move_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    return nullptr;
+  }
   static void create_ptr_copy(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
-    new(dst) P ((const P&)**(P**)obj);
+    *(P**)dst = *(P**)obj;
+  }
+  static auto create_ptr_move([[maybe_unused]]std::byte *dst, [[maybe_unused]]std::byte* obj, [[maybe_unused]] const std::byte *alloc){
+    
+  }
+  static constexpr static_meta_manager::ptr_type type = static_meta_manager::ptr_type::raw;
+};
+
+template<typename P>
+struct get_object_fn_collections{
+  using value_type = P;
+  using allocator = void;
+  static std::byte* get_ptr(std::byte* ptrs){
+    return (std::byte*)((P *)ptrs);
+  }
+  static constexpr void (*get_copy_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_copy_constructible_v<P>){
+      return &create_ptr_copy;
+    }
+    return nullptr;
+  }
+  static constexpr void (*get_move_fn())(std::byte *dst, std::byte* obj, const std::byte *alloc){
+    if constexpr(std::is_move_constructible_v<P>){
+      return &create_ptr_move;
+    }
+    return nullptr;
+  }
+  static void create_ptr_copy(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
+    new(dst) P((const P&)*(const P*)obj);
   }
   static void create_ptr_move(std::byte *dst, std::byte* obj, [[maybe_unused]] const std::byte *alloc){
-    new(dst) P((P&&)**(P**)obj);
+    new(dst) P((P&&)*(P*)obj);
   }
   static constexpr static_meta_manager::ptr_type type = static_meta_manager::ptr_type::raw;
 };
@@ -1633,10 +1708,12 @@ struct poly_cast_meta{
 
     for(auto& i:info){
       if(i.type == static_meta_manager::ptr_type::inplace || i.allocator == allocator_token){
-        i.create_ptr_copy(new_proxy.ptr_, obj_addr, (const std::byte*)&allocator.value());
+        if(i.create_ptr_copy != nullptr){
+          i.create_ptr_copy(new_proxy.ptr_, obj_addr, (const std::byte*)&allocator.value());
 
-        new_proxy.meta_ = pro::details::meta_ptr<typename facade_traits<NF>::meta>(i.meta_ptr);
-        return std::optional<pro::proxy<NF>>(std::move(new_proxy));
+          new_proxy.meta_ = pro::details::meta_ptr<typename facade_traits<NF>::meta>(i.meta_ptr);
+          return std::optional<pro::proxy<NF>>(std::move(new_proxy));
+        }
       }
     }
     return std::optional<pro::proxy<NF>>();
@@ -1662,13 +1739,15 @@ struct poly_cast_meta{
 
     for(auto& i:info){
       if(i.type == static_meta_manager::ptr_type::inplace || i.allocator == allocator_token){
-        i.create_ptr_move(new_proxy.ptr_, obj_addr, (const std::byte*)&allocator.value());
+        if(i.create_ptr_move == nullptr){
+          i.create_ptr_move(new_proxy.ptr_, obj_addr, (const std::byte*)&allocator.value());
 
-        new_proxy.meta_ = pro::details::meta_ptr<typename facade_traits<NF>::meta>(i.meta_ptr);
+          new_proxy.meta_ = pro::details::meta_ptr<typename facade_traits<NF>::meta>(i.meta_ptr);
 
-        proxy.reset();
+          proxy.reset();
 
-        return std::optional<pro::proxy<NF>>(std::move(new_proxy));
+          return std::optional<pro::proxy<NF>>(std::move(new_proxy));
+        }
       }
     }
     return std::optional<pro::proxy<NF>>();
@@ -1875,7 +1954,7 @@ using adl_accessor_arg_t =
     template <class __F, bool __IsDirect, class __D, class T> \
     struct accessor_single<__F, __IsDirect, __D, T() Q> { \
       ___PRO_GEN_DEBUG_SYMBOL_FOR_MEM_ACCESSOR(operator T) \
-      explicit operator typename std::enable_if<Expl, T>::type() Q { \
+      explicit operator T() Q { \
         if constexpr (Nullable) { \
           if (!SELF.has_value()) { return nullptr; } \
         } \
@@ -1901,9 +1980,8 @@ struct explicit_conversion_adapter {
   explicit_conversion_adapter(const explicit_conversion_adapter&) = delete;
 
   template <class U>
-  operator U() noexcept(std::is_nothrow_constructible_v<U, T>)
+  operator typename std::enable_if<std::is_constructible_v<U, T>, U>::type() noexcept(std::is_nothrow_constructible_v<U, T>)
       { 
-        static_assert(std::is_constructible_v<U, T>, "U should be able to construct with T");
         return U{std::forward<T>(value_)}; }
 
  private:
@@ -2967,6 +3045,13 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
           - 3>::__T::template add_convention<Mem##name, __VA_ARGS__>;                       \
     };
 
+#define fn_def_weak(name, ...)                                                \
+    PRO_DEF_MEM_DISPATCH(Mem##name, name);                                     \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<pro::weak_dispatch<Mem##name>, __VA_ARGS__>;                       \
+    };
+
 #define add_conv(name, ...)                                                \
     template <> struct TypeN<__COUNTER__> {                                    \
         using __T = typename TypeN<__COUNTER__                                   \
@@ -2983,6 +3068,12 @@ struct formatter<pro::proxy_indirect_accessor<F>, CharT> {
     template <> struct TypeN<__COUNTER__> {                                    \
         using __T = typename TypeN<__COUNTER__                                   \
           - 3>::__T::template add_convention<pro::operator_dispatch<pro::operator_##name>, __VA_ARGS__>;   \
+    };
+
+#define op_def_weak(name, ...)                                                \
+    template <> struct TypeN<__COUNTER__> {                                    \
+        using __T = typename TypeN<__COUNTER__                                   \
+          - 3>::__T::template add_convention<pro::weak_dispatch<pro::operator_dispatch<pro::operator_##name>>, __VA_ARGS__>;   \
     };
 
 #define op_direct_def(name, ...)                                                \

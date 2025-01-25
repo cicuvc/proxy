@@ -7,7 +7,6 @@ target("proxy")
     add_includedirs("inc")
     add_files("src/*.cpp")
     add_cxxflags("-std=c++17","-Werror","-Wall","-Wextra","-fstrict-aliasing","-Wstrict-aliasing","-ftemplate-backtrace-limit=0")
-    add_ldflags("-lgtest")
 
 target("test")
     set_kind("binary")
