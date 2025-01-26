@@ -1408,6 +1408,9 @@ class inplace_ptr {
       : value_(std::forward<Args>(args)...) {
         static_assert(std::is_constructible_v<T, Args...>, "Unable to construct T with given arguments");
       }
+  inplace_ptr(inplace_ptr<T>&){
+    std::abort();
+  }
   inplace_ptr(const inplace_ptr&)
       noexcept(std::is_nothrow_copy_constructible_v<T>) = default;
   inplace_ptr(inplace_ptr&&)
@@ -2375,6 +2378,13 @@ struct proxy_cast_context {
   void* result_ptr;
 };
 
+template<typename T>
+struct cast_ptr{
+  cast_ptr(std::remove_reference_t<T> *ptr_): ptr(ptr_){}
+  std::remove_reference_t<T> *ptr;
+};
+
+
 struct proxy_cast_dispatch;
 template <class F, bool IsDirect, class D, class O>
 struct proxy_cast_accessor_impl {
@@ -2404,8 +2414,9 @@ struct proxy_cast_accessor_impl {
     }
   }
   template <class T>
-  T* proxy_cast_ptr(std::remove_reference_t<_Self>* self, std::in_place_type_t<T>) noexcept{
-    static_assert(std::is_lvalue_reference_v<_Self>, "Self type should be lvalue reference");
+  friend T* proxy_cast_ptr(cast_ptr<_Self> self_, std::in_place_type_t<T>) noexcept{
+    auto self = self_.ptr;
+    //static_assert(std::is_lvalue_reference_v<_Self>, "Self type should be lvalue reference");
     if (!access_proxy<F>(*self).has_value()) { return nullptr; }
     void* result = nullptr;
     proxy_cast_context ctx{.type_ptr = &typeid(T), .is_ref = true,
@@ -2414,6 +2425,33 @@ struct proxy_cast_accessor_impl {
     return static_cast<T*>(result);
   }
 };
+
+template<class T, class F>
+T * proxy_cast_ptr(proxy<F>&& proxy){
+  return proxy_cast_ptr(cast_ptr<pro::proxy<F>&&> {&proxy},std::in_place_type<T>);
+}
+
+template<class T, class F>
+T * proxy_cast_ptr(proxy<F>& proxy){
+  return proxy_cast_ptr(cast_ptr<pro::proxy<F>&> {&proxy},std::in_place_type<T>);
+}
+
+template<class T, class F>
+T * proxy_cast_ptr(const proxy<F>& proxy){
+  return proxy_cast_ptr(cast_ptr<const pro::proxy<F>&> {&proxy},std::in_place_type<T>);
+}
+
+template<class T, class F>
+typename std::enable_if<!std::is_const_v<T>, T *>::type
+proxy_cast_ptr(proxy_indirect_accessor<F>* proxy){
+  return proxy_cast_ptr(cast_ptr<proxy_indirect_accessor<F>&> {proxy},std::in_place_type<T>);
+}
+
+template<class T, class F>
+typename std::enable_if<std::is_const_v<T>, T *>::type
+proxy_cast_ptr(const proxy_indirect_accessor<F>* proxy){
+  return proxy_cast_ptr(cast_ptr<const proxy_indirect_accessor<F>&> {proxy},std::in_place_type<T>);
+}
 
 #define ___PRO_DEF_PROXY_CAST_ACCESSOR(Q, ...) \
     template <class F, bool IsDirect, class D> \

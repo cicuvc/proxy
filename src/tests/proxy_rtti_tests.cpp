@@ -82,8 +82,62 @@ TEST(ProxyRttiTests, TestIndirectCast_Copy_Fail) {
   ASSERT_TRUE(exception_thrown);
 }
 
+TEST(ProxyRttiTests, TestIndirectCast_Move_Succeed) {
+  std::vector<int> v1{1, 2, 3};
+  auto p = pro::make_proxy<details::TestFacade>(v1);
+  auto v2 = proxy_cast(std::move(*p), std::in_place_type<std::vector<int>>);
+  ASSERT_EQ(v2, v1);
+  v2 = proxy_cast(std::move(*p), std::in_place_type<std::vector<int>>);
+  ASSERT_TRUE(v2.empty());
+}
+
+TEST(ProxyRttiTests, TestIndirectCast_Move_Fail) {
+  auto p = pro::make_proxy<details::TestFacade>(std::vector<int>{1, 2, 3});
+  bool exception_thrown = false;
+  try {
+    proxy_cast(std::move(*p),std::in_place_type<std::vector<double>>);
+  } catch (const pro::bad_proxy_cast&) {
+    exception_thrown = true;
+  }
+  ASSERT_TRUE(exception_thrown);
+}
 
 
+TEST(ProxyRttiTests, TestIndirectCast_Ptr_Succeed) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+  auto ptr = pro::details::proxy_cast_ptr<int>(&*p);
+  static_assert(std::is_same_v<decltype(ptr), int*>);
+  ASSERT_EQ(ptr, &v);
+  ASSERT_EQ(v, 123);
+}
+
+TEST(ProxyRttiTests, TestIndirectCast_Ptr_Fail) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+  auto ptr = pro::details::proxy_cast_ptr<double>(&*p);
+  static_assert(std::is_same_v<decltype(ptr), double*>);
+  ASSERT_EQ(ptr, nullptr);
+  ASSERT_EQ(v, 123);
+}
+
+TEST(ProxyRttiTests, TestIndirectCast_ConstPtr_Succeed) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+  auto ptr = pro::details::proxy_cast_ptr<const int>(&*p);
+  static_assert(std::is_same_v<decltype(ptr), const int*>);
+  ASSERT_EQ(ptr, &v);
+  ASSERT_EQ(v, 123);
+}
+
+TEST(ProxyRttiTests, TestIndirectCast_ConstPtr_Fail) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+  auto ptr = pro::details::proxy_cast_ptr<const double>(&*p);
+  static_assert(std::is_same_v<decltype(ptr), const double*>);
+  ASSERT_EQ(ptr, nullptr);
+  ASSERT_EQ(v, 123);
+}
 
 TEST(ProxyRttiTests, TestIndirectTypeid_Void) {
   pro::proxy<details::TestFacade> p;
@@ -188,6 +242,55 @@ TEST(ProxyRttiTests, TestDirectCast_Move_Fail) {
   ASSERT_FALSE(p.has_value());
 }
 
+
+TEST(ProxyRttiTests, TestDirectCast_Ptr_Succeed) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+  //using T = pro::details::proxy_cast_accessor_impl<proxy_rtti_tests_details::TestFacade, true, pro::details::proxy_cast_dispatch, void (pro::details::proxy_cast_context) const &>::_Self;
+  // decltype(p)::accessor_single<details::TestFacade, true, pro::details::proxy_cast_dispatch, void (pro::details::proxy_cast_context) const &>::_Self;
+  
+  pro::details::cast_ptr<decltype(p)> z1{&p};
+
+  using T1 = pro::details::cast_ptr<pro::details::proxy_cast_accessor_impl<proxy_rtti_tests_details::TestFacade, true, pro::details::proxy_cast_dispatch, void (pro::details::proxy_cast_context) &>::_Self>;
+  using T2 = pro::details::cast_ptr<pro::proxy<proxy_rtti_tests_details::TestFacade>>;
+  
+  std::cout << pro::details::static_type_token{std::in_place_type<T1>}->type_name << std::endl;
+  std::cout << pro::details::static_type_token{std::in_place_type<T2>}->type_name << std::endl;
+  proxy_cast_ptr(pro::details::cast_ptr<pro::proxy<proxy_rtti_tests_details::TestFacade> &>{&p},std::in_place_type<int*> );
+  auto ptr = pro::details::proxy_cast_ptr<int*>(p);
+  static_assert(std::is_same_v<decltype(ptr), int**>);
+  ASSERT_EQ(*ptr, &v);
+  ASSERT_EQ(v, 123);
+}
+
+TEST(ProxyRttiTests, TestDirectCast_Ptr_Fail) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+  auto ptr = pro::details::proxy_cast_ptr<double*>(p);
+  static_assert(std::is_same_v<decltype(ptr), double**>);
+  ASSERT_EQ(ptr, nullptr);
+  ASSERT_EQ(v, 123);
+}
+
+TEST(ProxyRttiTests, TestDirectCast_ConstPtr_Succeed) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+
+  auto ptr = pro::details::proxy_cast_ptr<int* const>(p);
+  static_assert(std::is_same_v<decltype(ptr), int* const*>);
+  ASSERT_EQ(*ptr, &v);
+  ASSERT_EQ(v, 123);
+}
+
+TEST(ProxyRttiTests, TestDirectCast_ConstPtr_Fail) {
+  int v = 123;
+  pro::proxy<details::TestFacade> p = &v;
+
+  auto ptr = pro::details::proxy_cast_ptr<double* const>(p);
+  static_assert(std::is_same_v<decltype(ptr), double* const*>);
+  ASSERT_EQ(ptr, nullptr);
+  ASSERT_EQ(v, 123);
+}
 
 
 TEST(ProxyRttiTests, TestDirectTypeid_Void) {
