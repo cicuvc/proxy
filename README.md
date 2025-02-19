@@ -8,7 +8,7 @@ Changes:
 - Better interface definition syntax
     ```cpp
     // ====================================================
-    // Original synatx
+    // Original syntax
     PRO_DEF_MEM_DISPATCH(MemArea, Area);
     PRO_DEF_MEM_DISPATCH(MemInfo, Info);
 
@@ -19,7 +19,7 @@ Changes:
         ::build {};
 
     // ====================================================
-    // New synatx
+    // New syntax
     interface_def(Drawable){
         support_copy(pro::constraint_level::nontrivial);
 
